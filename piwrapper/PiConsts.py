@@ -42,3 +42,18 @@ class SummaryType(Enum):
     ALL = "All"
     ALL_FOR_NON_NUMERIC = "AllForNonNumeric"
 
+class RetrievalMode(Enum):
+    """
+    Enumeration for retrieval mode documented here:
+    https://docs.osisoft.com/bundle/pi-web-api-reference/page/help/topics/retrieval-mode.html
+    """
+
+    AUTO = "Auto"
+    ATORBEFORE = "AtOrBefore"
+    BEFORE = "Before"
+    ATORAFTER = "AtOrAfter"
+    AFTER = "After"
+    EXACT = "Exact"
+    @classmethod
+    def _missing_(cls, value):
+        return "Auto"

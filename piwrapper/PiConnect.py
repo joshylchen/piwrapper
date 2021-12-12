@@ -7,7 +7,7 @@ import pandas as pd
 from dataclasses import dataclass
 from requests_kerberos import HTTPKerberosAuth, OPTIONAL, REQUIRED
 from typing import Any, Dict, List, Optional, Tuple
-from piwrapper.PiConsts import BufferOption, UpdateOption
+from piwrapper.PiConsts import BufferOption, RetrievalMode, UpdateOption
 
 
 @dataclass
@@ -241,6 +241,82 @@ class Connection:
         return response.headers["Location"]
 
 
+    def _single_recordedattime_value_getter(
+        self,
+        webid: str,
+        time:str,
+        retrival_mode: RetrievalMode    
+        ):
+        """
+        get recorded value in data frame for single webid
+        :param webid: webid
+        :param retrival_mode: how to retrive the recorded value
+        :param time: specific time or relative time
+        :return: single recorded value
+        :raise LookupError: No matching tag can be found
+        :raise ValueError: No response with the webid.
+       """        
+        resource_url: str = f"""{self.starting_url}streams/{webid}/recordedattime?retrievalMode={retrival_mode.value}&time={time}"""
+        response: requests.Response = requests.get(
+            resource_url,
+            auth=self.auth,
+            headers={"Content-Type": "application/json"},
+            verify=self.verify,
+        )
+
+        if response.status_code != requests.codes.ok:
+            raise LookupError(response)
+        response_dict : Dict[str, Any] =json.loads(s=response.content)
+        if response_dict["Value"]:
+            if retrival_mode.value == "Exact":
+                response = response_dict["Value"]["Value"]
+            else:
+                response = response_dict["Value"]
+        else:
+            raise ValueError("No response. Please check webid")
+        return response
+
+    def get_recordedattime_value(   
+        self,
+        pi_tag: str,
+        time:str,
+        retrival_mode: RetrievalMode      
+        ):
+        """
+        get pi point recorded value
+        :param pi_tag: name of pi tag
+        :param retrival_mode: how to retrive the recorded value
+        :param time: specific time or relative time        
+        :return: single recorded value
+        :raise LookupError: No matching tag can be found
+        :raise ValueError: more than one tags foud
+        """
+        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
+        if len(webid_dic) > 1:
+            raise ValueError(f"more than one tags have been found: {webid_dic.keys()}, use get_interpolated_values method instead")
+        _, v = next(iter(webid_dic.items()))
+        response=self._single_recordedattime_value_getter(v,time,retrival_mode)
+        return response
+
+    def get_recordedattim_values(   
+        self,
+        pi_tag: str,
+        time:str,
+        retrival_mode: RetrievalMode) -> dict:
+        """
+        get pi point interpolated value
+        :param pi_tag: name of pi tag
+        :param retrival_mode: how to retrive the recorded value
+        :param time: specific time or relative time   
+        :return: nested interpolated value in the DICTIONARY 
+        with tag name as key as interpolated value as value
+        :raise LookupError: No matching tag can be found
+        """
+        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
+        tag_names = list(webid_dic.keys())
+        response_dict : Dict[str, Any] = {tag: self._single_recordedattime_value_getter(webid_dic[tag],time,retrival_mode) for tag in tag_names }
+
+        return response_dict
 
 
 
