@@ -130,7 +130,7 @@ class Connection:
             raise LookupError(response)
         response_dict : Dict[str, Any] =json.loads(s=response.content)
         if response_dict["Items"]:
-            webid_dic = {idx["Name"]: idx["WebID"] for idx in response_dict["Items"] }
+            webid_dic = {idx["Name"]: idx["WebId"] for idx in response_dict["Items"] }
         else:
             raise ValueError("No response. Please check tag name")
 

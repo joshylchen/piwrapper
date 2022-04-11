@@ -3,6 +3,6 @@ from piwrapper.PiConnect import PIValue, Connection
 from piwrapper.PiConsts import BufferOption, UpdateOption, SummaryType,RetrievalMode
 
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 __author__ = 'Josh Chen <jcpythonlib@gmail.com>'
 __all__ = []
