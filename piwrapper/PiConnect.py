@@ -77,7 +77,7 @@ class Connection:
             # Disable the insecure request warnings if the user doesn't want to check URL certificates
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def get_data_servers(self) -> list:
+    def get_all_dataservers(self) -> list:
         """
         Get all dataservers
         :return: list of data servers
@@ -111,15 +111,20 @@ class Connection:
         return self.data_server_list
     def _find_pi_webid(
         self,
-        pi_tag: str) ->dict:
+        dataserver: str,
+        pi_tag: str) ->str:
         """
-        Search associated webid for pi_tag
-        :param: pi_tag: full or partial pi tag name
-        :return: dictionary with tag name as key and webid as value
+        Search associated webid for pi_tag from dataserver
+        :param: dataserver: dataserver name
+        :param: pi_tag: pi tag name
+        :return: webid of input pi_tag
         :raise LookupError: No matching tag can be found
+        :raise ValueError: Duplicated pi tag found
         :raise ValueError: No valid response returned
         """
-        pi_tag_url: str = f"""{self.starting_url}search/query?q=name:{pi_tag}"""
+        ds_payload: Dict = self.get_dataserver(dataserver)
+        ds_webid: str = ds_payload["WebId"]
+        pi_tag_url: str = f"""{self.starting_url}dataservers/{ds_webid}/points?nameFilter={pi_tag}"""
         response: requests.Response = requests.get(
             pi_tag_url,
             auth=self.auth,
@@ -130,11 +135,13 @@ class Connection:
             raise LookupError(response)
         response_dict : Dict[str, Any] =json.loads(s=response.content)
         if response_dict["Items"]:
-            webid_dic = {idx["Name"]: idx["WebId"] for idx in response_dict["Items"] }
+            if len(response_dict["Items"]) > 1:
+                raise ValueError("Duplicated pi_tag detected")
+            webid = response_dict["Items"][0]["WebId"]
         else:
             raise ValueError("No response. Please check tag name")
 
-        return webid_dic
+        return webid
     def _single_interpolated_value_getter(
         self,
         webid: str):
@@ -164,41 +171,25 @@ class Connection:
 
     def get_interpolated_value(   
         self,
+        dataserver: str,
         pi_tag: str):
         """
         get pi point interpolated value
+        :param: dataserver: dataserver name
         :param pi_tag: name of pi tag
         :return: interpolated value in a dataframe
         :raise LookupError: No matching tag can be found
-        :raise ValueError: more than one tags foud
         """
-        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
-        if len(webid_dic) > 1:
-            raise ValueError(f"more than one tags have been found: {webid_dic.keys()}, use get_interpolated_values method instead")
-        _, v = next(iter(webid_dic.items()))
-        response_df=self._single_interpolated_value_getter(v)
+        webid: str  = self._find_pi_webid(dataserver,pi_tag)
+        response_df=self._single_interpolated_value_getter(webid)
         return response_df
 
-    def get_interpolated_values(   
-        self,
-        pi_tag: str) -> dict:
-        """
-        get pi point interpolated value
-        :param pi_tag: name of pi tag
-        :return: nested interpolated value in the DICTIONARY 
-        with tag name as key as interpolated value as value
-        :raise LookupError: No matching tag can be found
-        """
-        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
-        tag_names = list(webid_dic.keys())
-        response_dict : Dict[str, Any] = {tag: self._single_interpolated_value_getter(webid_dic[tag]) for tag in tag_names }
-
-        return response_dict
     def update_value(
         self,
         value: PIValue,
         update_option: UpdateOption,
         buffer_option: BufferOption,
+        dataserver: str,
         pi_tag: str = None,
         webid: str = None
     ) -> str:
@@ -209,6 +200,7 @@ class Connection:
         :param pi_tag: update the value for this pi_tag
         :param update_option: update mode to apply
         :param buffer_option: buffering more to apply
+        :param dataserver: dataserver name
         :param web_id: use web_id to update 
         :return: Location or the added object if successful
         :raises ValueError: cannot have both webid and pi_tag at the same time
@@ -219,13 +211,8 @@ class Connection:
         if webid is not None and pi_tag is not None:
             raise ValueError("Cannot pass both webid and pi_tag at the same time")
         if webid == None:
-            webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
-            if len(webid_dic) > 1:
-                raise ValueError(f"more than one associated webids have been found: {webid_dic.keys()}, use single webid instead")
-            _, v = next(iter(webid_dic.items()))
-            url: str = (f"{self.starting_url}streams/{v}/value?updateOption={update_option.value}&bufferOption={buffer_option.value}")
-        else:
-            url: str = (f"{self.starting_url}streams/{webid}/value?updateOption={update_option.value}&bufferOption={buffer_option.value}")        
+            webid: str  = self._find_pi_webid(dataserver,pi_tag)
+        url: str = (f"{self.starting_url}streams/{webid}/value?updateOption={update_option.value}&bufferOption={buffer_option.value}")      
         response: requests.Response = requests.post(
             url=url,
             data=value.to_json(),
@@ -246,7 +233,7 @@ class Connection:
         webid: str,
         time:str,
         retrival_mode: RetrievalMode    
-        ):
+        ) -> str:
         """
         get recorded value in data frame for single webid
         :param webid: webid
@@ -278,12 +265,14 @@ class Connection:
 
     def get_recordedattime_value(   
         self,
+        dataserver: str,
         pi_tag: str,
         time:str,
         retrival_mode: RetrievalMode      
         ):
         """
         get pi point recorded value
+        :param dataserver: dataserver name
         :param pi_tag: name of pi tag
         :param retrival_mode: how to retrive the recorded value
         :param time: specific time or relative time        
@@ -291,32 +280,28 @@ class Connection:
         :raise LookupError: No matching tag can be found
         :raise ValueError: more than one tags foud
         """
-        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
-        if len(webid_dic) > 1:
-            raise ValueError(f"more than one tags have been found: {webid_dic.keys()}, use get_interpolated_values method instead")
-        _, v = next(iter(webid_dic.items()))
-        response=self._single_recordedattime_value_getter(v,time,retrival_mode)
+        webid: str  = self._find_pi_webid(dataserver, pi_tag)
+        response=self._single_recordedattime_value_getter(webid,time,retrival_mode)
         return response
 
-    def get_recordedattim_values(   
-        self,
-        pi_tag: str,
-        time:str,
-        retrival_mode: RetrievalMode) -> dict:
+    def get_dataserver(self,dataserver) -> Dict:
         """
-        get pi point interpolated value
-        :param pi_tag: name of pi tag
-        :param retrival_mode: how to retrive the recorded value
-        :param time: specific time or relative time   
-        :return: nested interpolated value in the DICTIONARY 
-        with tag name as key as interpolated value as value
-        :raise LookupError: No matching tag can be found
+        Get the payload of targeted dataserver
+        :param dataserver: name of targeted dataserver
+        :return: data server payload (dictionary)
+        raise: connectionError: fail to connect to Pi server
         """
-        webid_dic: Dict[str, Any]  = self._find_pi_webid(pi_tag)
-        tag_names = list(webid_dic.keys())
-        response_dict : Dict[str, Any] = {tag: self._single_recordedattime_value_getter(webid_dic[tag],time,retrival_mode) for tag in tag_names }
+        dataserver_url: str =  f"""{self.starting_url}dataservers?name={dataserver}"""
+        response: requests.Response = requests.get(
+            dataserver_url,
+            auth=self.auth,
+            headers={"Content-Type": "application/json"},
+            verify=self.verify,
+        )
 
-        return response_dict
+        if response.status_code != requests.codes.ok:
+            raise ConnectionError("Connection to PI REST API Server failed")
 
+        data_server_content: Dict[str, Any] = json.loads(s=response.content)
 
-
+        return data_server_content
